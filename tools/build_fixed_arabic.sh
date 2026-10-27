@@ -34,10 +34,11 @@ if [[ ! -s "$APK_SOURCE" ]]; then
 fi
 
 RELEASE_DIR="releases"
-APK_OUT="$RELEASE_DIR/PocketDaemon-$ARTIFACT_VERSION.apk"
-ZIP_OUT="$RELEASE_DIR/PocketDaemon-$ARTIFACT_VERSION-magisk.zip"
-SUMS_OUT="$RELEASE_DIR/SHA256SUMS.txt"
 mkdir -p "$RELEASE_DIR"
+RELEASE_DIR_ABS="$(cd "$RELEASE_DIR" && pwd)"
+APK_OUT="$RELEASE_DIR_ABS/PocketDaemon-$ARTIFACT_VERSION.apk"
+ZIP_OUT="$RELEASE_DIR_ABS/PocketDaemon-$ARTIFACT_VERSION-magisk.zip"
+SUMS_OUT="$RELEASE_DIR_ABS/SHA256SUMS.txt"
 cp "$APK_SOURCE" "$APK_OUT"
 
 TMP_DIR="$(mktemp -d)"
@@ -59,7 +60,7 @@ fi
 rm -f "$ZIP_OUT"
 (
   cd "$TMP_DIR/module"
-  zip -qr "$OLDPWD/$ZIP_OUT" .
+  zip -qr "$ZIP_OUT" .
 )
 
 sha256sum "$APK_OUT" "$ZIP_OUT" > "$SUMS_OUT"
