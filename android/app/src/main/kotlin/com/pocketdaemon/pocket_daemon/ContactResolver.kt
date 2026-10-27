@@ -9,6 +9,8 @@ data class ResolvedCaller(
     val number: String,
     val displayName: String?,
     val trusted: TrustedContactConfig?,
+    /** False when contacts lookup failed; callers must fail closed rather than auto-answer. */
+    val lookupReliable: Boolean = true,
 )
 
 class ContactResolver(private val context: Context) {
@@ -25,15 +27,18 @@ class ContactResolver(private val context: Context) {
                 number = number,
                 displayName = trusted.name.ifBlank { lookupContact(number) },
                 trusted = trusted,
+                lookupReliable = true,
             )
         }
 
-        val contactName = lookupContact(number)
-        Log.i(TAG, "Resolved $number → ${contactName ?: "unknown"} (not trusted)")
-        return ResolvedCaller(number = number, displayName = contactName, trusted = null)
+        val lookup = lookupContact(number)
+        Log.i(TAG, "Resolved $number → ${lookup.name ?: "unknown"} (not trusted, reliable=${lookup.reliable})")
+        return ResolvedCaller(number = number, displayName = lookup.name, trusted = null, lookupReliable = lookup.reliable)
     }
 
-    private fun lookupContact(number: String): String? {
+    private data class ContactLookup(val name: String?, val reliable: Boolean)
+
+    private fun lookupContact(number: String): ContactLookup {
         return try {
             val uri = Uri.withAppendedPath(
                 ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
@@ -44,13 +49,14 @@ class ContactResolver(private val context: Context) {
                 arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
                 null, null, null
             )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.PhoneLookup.DISPLAY_NAME))
-                } else null
-            }
+                if (cursor == null) ContactLookup(null, false)
+                else if (cursor.moveToFirst()) ContactLookup(
+                    cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.PhoneLookup.DISPLAY_NAME)), true
+                ) else ContactLookup(null, true)
+            } ?: ContactLookup(null, false)
         } catch (e: Exception) {
             Log.w(TAG, "Contact lookup failed for $number: ${e.message}")
-            null
+            ContactLookup(null, false)
         }
     }
 }
