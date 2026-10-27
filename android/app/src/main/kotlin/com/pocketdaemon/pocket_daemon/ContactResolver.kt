@@ -25,7 +25,7 @@ class ContactResolver(private val context: Context) {
             Log.i(TAG, "Trusted contact match: ${trusted.name} (${trusted.number})")
             return ResolvedCaller(
                 number = number,
-                displayName = trusted.name.ifBlank { lookupContact(number) },
+                displayName = trusted.name.ifBlank { lookupContact(number).name.orEmpty() },
                 trusted = trusted,
                 lookupReliable = true,
             )
