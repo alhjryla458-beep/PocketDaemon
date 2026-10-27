@@ -65,7 +65,8 @@ class CallAudioHandler(
         Log.i(TAG, "Audio handler started (speakerMonitor=$speakerMonitor)")
     }
 
-    fun isTelephonyPlaybackReady(): Boolean = running && telephonyPlaybackReady && playbackTrack != null
+    fun isTelephonyPlaybackReady(): Boolean = running && telephonyPlaybackReady &&
+        playbackTrack?.routedDevice?.type == AudioDeviceInfo.TYPE_TELEPHONY
 
     fun stop() {
         running = false
@@ -170,19 +171,13 @@ class CallAudioHandler(
             }
 
             track.play()
-            val routed = track.routedDevice
-            if (routed == null || routed.type != AudioDeviceInfo.TYPE_TELEPHONY) {
-                Log.e(TAG, "Playback disabled: actual route is not TELEPHONY (actual=${routed?.type})")
-                try { track.stop() } catch (_: Exception) {}
-                track.release()
-                telephonyPlaybackReady = false
-                return
-            }
-
             playbackTrack = track
+            // setPreferredDevice() is only a request; verify the actual route on every
+            // enqueue because some devices expose routedDevice a short time after play().
             telephonyPlaybackReady = true
+            val routed = track.routedDevice
+            Log.i(TAG, "Playback route requested; actual=${routed?.type ?: "pending"}")
             playbackThread = Thread({ playbackLoop() }, "audio-playback").also { it.start() }
-            Log.i(TAG, "Playback: verified TELEPHONY output (id=${routed.id})")
         } catch (e: Exception) {
             telephonyPlaybackReady = false
             Log.e(TAG, "Playback init failed: ${e.message}")
