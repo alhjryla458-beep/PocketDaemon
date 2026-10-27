@@ -84,14 +84,29 @@ class FixedArabicReplyPlayer(
                         mainHandler.post {
                             if (stopped || utteranceId != pendingId) return@post
                             val file = tempFile
-                            if (file != null && file.exists()) decodeAndQueue(file)
+                            val playbackDurationMs = if (file != null && file.exists()) {
+                                decodeAndQueue(file)
+                            } else {
+                                fail("Synthesized Arabic reply file is missing")
+                                return@post
+                            }
                             tempFile?.delete()
                             tempFile = null
                             pendingId = null
-                            if (!stopped && index < REPLIES.size) {
-                                mainHandler.postDelayed({ speakNext() }, GAP_AFTER_REPLY_MS)
-                            } else if (!stopped) {
-                                onStatus("Fixed Arabic reply sequence completed")
+                            if (stopped) return@post
+                            if (index < REPLIES.size) {
+                                mainHandler.postDelayed(
+                                    { if (!stopped) speakNext() },
+                                    playbackDurationMs + GAP_AFTER_REPLY_MS
+                                )
+                            } else {
+                                // TTS onDone only means the WAV file was synthesized.
+                                // Wait for the queued PCM to finish playing before handing
+                                // control back to the phone owner.
+                                mainHandler.postDelayed(
+                                    { if (!stopped) onStatus("Fixed Arabic reply sequence completed") },
+                                    playbackDurationMs + 1_000L
+                                )
                             }
                         }
                     }
@@ -137,17 +152,23 @@ class FixedArabicReplyPlayer(
         stop()
     }
 
-    private fun decodeAndQueue(file: File) {
+    private fun decodeAndQueue(file: File): Long {
         try {
             val wav = readPcm16Wav(file)
             val converted = resampleMonoPcm16(wav.samples, wav.sampleRate, CallAudioHandler.PLAYBACK_RATE, wav.channels)
             if (converted.isEmpty()) {
                 fail("Synthesized Arabic audio was empty")
-            } else if (!audio.enqueuePlayback(converted)) {
-                fail("Call audio output is not ready; fixed reply stopped")
+                return 0L
             }
+            if (!audio.enqueuePlayback(converted)) {
+                fail("Call audio output is not ready; fixed reply stopped")
+                return 0L
+            }
+            // PCM16 mono has two bytes per sample. This estimates queued playback time.
+            return converted.size.toLong() * 1_000L / (CallAudioHandler.PLAYBACK_RATE * 2L)
         } catch (e: Exception) {
             fail("Could not decode Arabic speech audio: " + e.message)
+            return 0L
         }
     }
 
