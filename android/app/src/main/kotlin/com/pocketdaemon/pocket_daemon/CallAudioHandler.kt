@@ -255,6 +255,12 @@ class CallAudioHandler(
                     if (!running) return
                     chunk = playbackQueue.removeFirst()
                 }
+                if (track.routedDevice?.type != AudioDeviceInfo.TYPE_TELEPHONY) {
+                    telephonyPlaybackReady = false
+                    synchronized(playbackLock) { playbackQueue.clear() }
+                    Log.e(TAG, "Playback halted: actual output is no longer TELEPHONY")
+                    break
+                }
                 track.write(chunk, 0, chunk.size)
                 monitorTrack?.write(chunk, 0, chunk.size)
             }
