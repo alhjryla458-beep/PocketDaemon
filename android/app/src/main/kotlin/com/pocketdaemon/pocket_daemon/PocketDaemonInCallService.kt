@@ -307,7 +307,7 @@ class PocketDaemonInCallService : InCallService() {
                 callerNumber = number,
                 callerName = resolved.displayName,
                 onHangUp = hangUp,
-                onFixedReplyUnavailable = {
+                onFixedReplyUnavailable = { message ->
                     handler.post {
                         if (sessions.containsKey(call)) {
                             val completed = message.contains("sequence completed", ignoreCase = true)
