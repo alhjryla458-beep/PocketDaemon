@@ -140,6 +140,7 @@ class PocketDaemonInCallService : InCallService() {
                 app.emitEvent("callRinging", mapOf("number" to number))
                 val resolvedCaller = contactResolver.resolve(number)
                 val protected = number.isBlank() || number == "unknown" ||
+                    !resolvedCaller.lookupReliable ||
                     resolvedCaller.displayName != null ||
                     resolvedCaller.trusted != null ||
                     try { PhoneNumberUtils.isEmergencyNumber(number) } catch (_: Exception) { false }
