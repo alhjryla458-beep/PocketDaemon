@@ -14,6 +14,7 @@ class CallSession(
     val callerNumber: String,
     private val callerName: String?,
     private val onHangUp: () -> Unit,
+    private val onFixedReplyUnavailable: () -> Unit = {},
 ) : ActiveCallSession {
     companion object {
         private const val TAG = "CallSession"
@@ -171,6 +172,14 @@ class CallSession(
         fixedReplyPlayer = FixedArabicReplyPlayer(context, handler) { message ->
             Log.i(TAG, "Fixed reply status: $message")
             app.emitEvent("fixedReplyStatus", mapOf("message" to message))
+            if (message.contains("unavailable", ignoreCase = true) ||
+                message.contains("failed", ignoreCase = true) ||
+                message.contains("no verified", ignoreCase = true) ||
+                message.contains("could not", ignoreCase = true) ||
+                message.contains("not ready", ignoreCase = true) ||
+                message.contains("lost", ignoreCase = true)) {
+                onFixedReplyUnavailable()
+            }
         }
         fixedReplyPlayer?.start()
         Log.i(TAG, "Session active: offline fixed Arabic reply mode")
