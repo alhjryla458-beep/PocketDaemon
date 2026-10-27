@@ -2,7 +2,10 @@ package com.pocketdaemon.pocket_daemon
 
 import android.app.Notification
 import android.app.PendingIntent
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.telephony.PhoneNumberUtils
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
@@ -39,6 +42,8 @@ class PocketDaemonInCallService : InCallService() {
     private val manualCalls = HashSet<Call>()
     /** Calls seen ringing, i.e. incoming. Direction fallback for devices below API 29. */
     private val ringingCalls = HashSet<Call>()
+    /** Incoming calls deliberately left for the owner: saved/trusted/emergency or contact lookup unavailable. */
+    private val bypassAgentCalls = HashSet<Call>()
     /** Every call Telecom handed us that has not disconnected yet, so the UI gets a callEnded for each one. */
     private val knownCalls = HashSet<Call>()
     /** Take-overs whose agent audio is still being released; hand-offs wait for this to reach zero. */
@@ -136,19 +141,31 @@ class PocketDaemonInCallService : InCallService() {
                 ringingCalls.add(call)
                 app.emitEvent("callRinging", mapOf("number" to number))
                 if (app.agentEnabled) {
-                    Log.i(TAG, "Agent enabled — auto-answer in ${app.answerDelayMs}ms")
-                    val runnable = Runnable {
-                        pendingAnswer = null
-                        try {
-                            call.answer(VideoProfile.STATE_AUDIO_ONLY)
-                            Log.i(TAG, "Call answered")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Answer failed", e)
-                            app.emitEvent("error", mapOf("message" to "Answer failed: ${e.message}"))
+                    val hasContactsPermission =
+                        checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+                    val resolved = if (hasContactsPermission) contactResolver.resolve(number) else null
+                    val emergency = try { PhoneNumberUtils.isEmergencyNumber(number) } catch (_: Exception) { true }
+                    val mustRemainManual = emergency || !hasContactsPermission ||
+                        resolved?.displayName != null || resolved?.trusted != null
+                    if (mustRemainManual) {
+                        bypassAgentCalls.add(call)
+                        Log.i(TAG, "Leaving call for owner (emergency=$emergency, contactsPermission=$hasContactsPermission, savedOrTrusted=${resolved?.displayName != null || resolved?.trusted != null})")
+                    } else {
+                        Log.i(TAG, "Unknown caller — auto-answer in ${app.answerDelayMs}ms")
+                        val runnable = Runnable {
+                            pendingAnswer = null
+                            if (stateOf(call) != Call.STATE_RINGING) return@Runnable
+                            try {
+                                call.answer(VideoProfile.STATE_AUDIO_ONLY)
+                                Log.i(TAG, "Call answered")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Answer failed", e)
+                                app.emitEvent("error", mapOf("message" to "Answer failed: ${e.message}"))
+                            }
                         }
+                        pendingAnswer = runnable
+                        handler.postDelayed(runnable, app.answerDelayMs)
                     }
-                    pendingAnswer = runnable
-                    handler.postDelayed(runnable, app.answerDelayMs)
                 }
             }
 
@@ -169,6 +186,9 @@ class PocketDaemonInCallService : InCallService() {
                         Unit
                     }
                     bridge.onOutboundCallActive(hangUp)
+                } else if (bypassAgentCalls.remove(call)) {
+                    Log.i(TAG, "Incoming call excluded from agent; owner handles it: $number")
+                    beginManualCall(call, number)
                 } else if (isTracked(call)) {
                     // Already handled; e.g. resumed from hold.
                 } else if (isOutgoingCall(call)) {
@@ -186,6 +206,7 @@ class PocketDaemonInCallService : InCallService() {
             Call.STATE_DISCONNECTING, Call.STATE_DISCONNECTED -> {
                 stopPhoneCallRecording()
                 ringingCalls.remove(call)
+                bypassAgentCalls.remove(call)
                 val wasKnown = knownCalls.remove(call)
                 if (outboundBridgedCall == call) {
                     Log.i(TAG, "Outbound bridge call disconnected: $number")
