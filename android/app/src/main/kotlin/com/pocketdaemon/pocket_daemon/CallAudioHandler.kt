@@ -32,6 +32,7 @@ class CallAudioHandler(
     private var playbackTrack: AudioTrack? = null
     private var monitorTrack: AudioTrack? = null
     private var recorder: AudioRecord? = null
+    @Volatile private var telephonyPlaybackReady = false
 
     private val playbackLock = Object()
     private val playbackQueue = ArrayDeque<ByteArray>()
@@ -64,8 +65,11 @@ class CallAudioHandler(
         Log.i(TAG, "Audio handler started (speakerMonitor=$speakerMonitor)")
     }
 
+    fun isTelephonyPlaybackReady(): Boolean = running && telephonyPlaybackReady && playbackTrack != null
+
     fun stop() {
         running = false
+        telephonyPlaybackReady = false
         captureThread?.interrupt()
         synchronized(playbackLock) { playbackLock.notifyAll() }
         playbackThread?.interrupt()
@@ -77,11 +81,14 @@ class CallAudioHandler(
         releaseResources()
     }
 
-    fun enqueuePlayback(pcm: ByteArray) {
+    fun enqueuePlayback(pcm: ByteArray): Boolean {
+        if (!isTelephonyPlaybackReady()) return false
         synchronized(playbackLock) {
+            if (!isTelephonyPlaybackReady()) return false
             playbackQueue.addLast(pcm)
             playbackLock.notify()
         }
+        return true
     }
 
     fun flushPlayback() {
@@ -130,6 +137,11 @@ class CallAudioHandler(
     }
 
     private fun initPlayback(telephonyOut: AudioDeviceInfo?) {
+        if (telephonyOut == null) {
+            Log.e(TAG, "Playback disabled: no TELEPHONY output device; refusing default speaker fallback")
+            telephonyPlaybackReady = false
+            return
+        }
         val bufSize = maxOf(
             AudioTrack.getMinBufferSize(PLAYBACK_RATE, CHANNEL_OUT, ENCODING),
             PLAYBACK_RATE * 2
@@ -150,17 +162,29 @@ class CallAudioHandler(
                 .setAudioFormat(format)
                 .build()
 
-            if (telephonyOut != null && track.setPreferredDevice(telephonyOut)) {
-                Log.i(TAG, "Playback: TELEPHONY output (id=${telephonyOut.id})")
-            } else {
-                Log.i(TAG, "Playback: default device (no TELEPHONY route)")
+            if (!track.setPreferredDevice(telephonyOut)) {
+                Log.e(TAG, "Playback disabled: Android rejected TELEPHONY output route")
+                track.release()
+                telephonyPlaybackReady = false
+                return
             }
 
             track.play()
-            playbackTrack = track
+            val routed = track.routedDevice
+            if (routed == null || routed.type != AudioDeviceInfo.TYPE_TELEPHONY) {
+                Log.e(TAG, "Playback disabled: actual route is not TELEPHONY (actual=${routed?.type})")
+                try { track.stop() } catch (_: Exception) {}
+                track.release()
+                telephonyPlaybackReady = false
+                return
+            }
 
+            playbackTrack = track
+            telephonyPlaybackReady = true
             playbackThread = Thread({ playbackLoop() }, "audio-playback").also { it.start() }
+            Log.i(TAG, "Playback: verified TELEPHONY output (id=${routed.id})")
         } catch (e: Exception) {
+            telephonyPlaybackReady = false
             Log.e(TAG, "Playback init failed: ${e.message}")
         }
     }
@@ -260,6 +284,7 @@ class CallAudioHandler(
         } catch (_: Exception) {}
         recorder = null
         playbackTrack = null
+        telephonyPlaybackReady = false
         monitorTrack = null
         Log.i(TAG, "Resources released")
     }
