@@ -261,8 +261,17 @@ class CallAudioHandler(
                     Log.e(TAG, "Playback halted: actual output is no longer TELEPHONY")
                     break
                 }
-                track.write(chunk, 0, chunk.size)
-                monitorTrack?.write(chunk, 0, chunk.size)
+                if (!writeFully(track, chunk)) {
+                    telephonyPlaybackReady = false
+                    synchronized(playbackLock) { playbackQueue.clear() }
+                    Log.e(TAG, "Playback halted: AudioTrack did not accept the full PCM chunk")
+                    break
+                }
+                monitorTrack?.let { monitor ->
+                    if (!writeFully(monitor, chunk)) {
+                        Log.w(TAG, "Monitor output accepted only part of a PCM chunk")
+                    }
+                }
             }
         } catch (e: InterruptedException) {
             // normal shutdown
@@ -271,6 +280,19 @@ class CallAudioHandler(
         } finally {
             Log.i(TAG, "Playback stopped")
         }
+    }
+
+    private fun writeFully(track: AudioTrack, data: ByteArray): Boolean {
+        var offset = 0
+        while (offset < data.size && running) {
+            val written = track.write(data, offset, data.size - offset)
+            if (written <= 0) {
+                Log.e(TAG, "AudioTrack.write failed: $written")
+                return false
+            }
+            offset += written
+        }
+        return offset == data.size
     }
 
     private fun releaseResources() {
