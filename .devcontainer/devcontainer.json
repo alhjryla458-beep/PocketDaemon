@@ -1,0 +1,14 @@
+{
+  "name": "PocketDaemon Flutter Android Builder",
+  "image": "ghcr.io/cirruslabs/flutter:stable",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Dart-Code.flutter",
+        "Dart-Code.dart-code"
+      ]
+    }
+  },
+  "postCreateCommand": "bash tools/build_fixed_arabic.sh",
+  "remoteUser": "root"
+}
