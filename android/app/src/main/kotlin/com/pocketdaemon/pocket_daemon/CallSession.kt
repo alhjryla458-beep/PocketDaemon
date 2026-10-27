@@ -14,7 +14,7 @@ class CallSession(
     val callerNumber: String,
     private val callerName: String?,
     private val onHangUp: () -> Unit,
-    private val onFixedReplyUnavailable: () -> Unit = {},
+    private val onFixedReplyUnavailable: (String) -> Unit = {},
 ) : ActiveCallSession {
     companion object {
         private const val TAG = "CallSession"
@@ -179,7 +179,7 @@ class CallSession(
                 message.contains("not ready", ignoreCase = true) ||
                 message.contains("lost", ignoreCase = true) ||
                 message.contains("sequence completed", ignoreCase = true)) {
-                onFixedReplyUnavailable()
+                onFixedReplyUnavailable(message)
             }
         }
         fixedReplyPlayer?.start()
