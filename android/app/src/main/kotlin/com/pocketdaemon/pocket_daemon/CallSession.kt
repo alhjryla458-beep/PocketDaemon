@@ -177,7 +177,8 @@ class CallSession(
                 message.contains("no verified", ignoreCase = true) ||
                 message.contains("could not", ignoreCase = true) ||
                 message.contains("not ready", ignoreCase = true) ||
-                message.contains("lost", ignoreCase = true)) {
+                message.contains("lost", ignoreCase = true) ||
+                message.contains("sequence completed", ignoreCase = true)) {
                 onFixedReplyUnavailable()
             }
         }
