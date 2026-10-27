@@ -77,6 +77,9 @@ class CallAudioHandler(
         releaseResources()
     }
 
+    fun isTelephonyPlaybackRouted(): Boolean =
+        playbackTrack?.routedDevice?.type == AudioDeviceInfo.TYPE_TELEPHONY
+
     fun enqueuePlayback(pcm: ByteArray) {
         synchronized(playbackLock) {
             playbackQueue.addLast(pcm)
@@ -150,14 +153,15 @@ class CallAudioHandler(
                 .setAudioFormat(format)
                 .build()
 
-            if (telephonyOut != null && track.setPreferredDevice(telephonyOut)) {
-                Log.i(TAG, "Playback: TELEPHONY output (id=${telephonyOut.id})")
-            } else {
-                Log.i(TAG, "Playback: default device (no TELEPHONY route)")
+            if (telephonyOut == null || !track.setPreferredDevice(telephonyOut)) {
+                Log.e(TAG, "No TELEPHONY output route; refusing default-device playback")
+                track.release()
+                return
             }
 
             track.play()
             playbackTrack = track
+            Log.i(TAG, "Playback preferred TELEPHONY output (id=${telephonyOut.id}); routed=${track.routedDevice?.type}")
 
             playbackThread = Thread({ playbackLoop() }, "audio-playback").also { it.start() }
         } catch (e: Exception) {
@@ -235,6 +239,11 @@ class CallAudioHandler(
                     }
                     if (!running) return
                     chunk = playbackQueue.removeFirst()
+                }
+                if (track.routedDevice?.type != AudioDeviceInfo.TYPE_TELEPHONY) {
+                    Log.e(TAG, "Playback route is not TELEPHONY; dropping queued audio")
+                    synchronized(playbackLock) { playbackQueue.clear() }
+                    continue
                 }
                 track.write(chunk, 0, chunk.size)
                 monitorTrack?.write(chunk, 0, chunk.size)
