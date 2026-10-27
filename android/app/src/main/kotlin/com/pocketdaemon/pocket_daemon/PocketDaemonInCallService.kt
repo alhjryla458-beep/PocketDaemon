@@ -307,6 +307,11 @@ class PocketDaemonInCallService : InCallService() {
                 callerNumber = number,
                 callerName = resolved.displayName,
                 onHangUp = hangUp,
+                onFixedReplyUnavailable = {
+                    handler.post {
+                        if (sessions.containsKey(call)) takeOverCallForUnavailableAudio(call)
+                    }
+                },
             )
         }
 
@@ -339,6 +344,27 @@ class PocketDaemonInCallService : InCallService() {
         }
         Log.i(TAG, "Handing call to agent: $number")
         startAgentSession(call, number)
+    }
+
+    private fun takeOverCallForUnavailableAudio(call: Call) {
+        val session = sessions.remove(call) ?: return
+        val number = call.details?.handle?.schemeSpecificPart ?: "unknown"
+        Log.w(TAG, "Fixed reply audio unavailable; returning call to owner")
+        session.stop()
+        takenOverCalls.add(call)
+        if (sessions.isEmpty()) activeCallerLabel = null
+        updateForeground()
+        setMuted(false)
+        restoreCallVolume()
+        releasingTakeovers++
+        Thread({
+            session.awaitTermination()
+            handler.post {
+                releasingTakeovers--
+                if (takenOverCalls.contains(call)) startPhoneCallRecording()
+            }
+        }, "fixed-reply-fallback-cleanup").start()
+        app.emitEvent("callTakenOver", mapOf("number" to number, "reason" to "fixed_reply_audio_unavailable"))
     }
 
     private fun takeOverActiveCall() {
