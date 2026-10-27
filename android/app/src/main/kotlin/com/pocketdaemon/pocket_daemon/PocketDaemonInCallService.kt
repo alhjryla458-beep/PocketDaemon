@@ -144,7 +144,7 @@ class PocketDaemonInCallService : InCallService() {
                     val hasContactsPermission =
                         checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
                     val resolved = if (hasContactsPermission) contactResolver.resolve(number) else null
-                    val emergency = try { PhoneNumberUtils.isEmergencyNumber(number) } catch (_: Exception) { true }
+                    val emergency = try {\n                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {\n                            PhoneNumberUtils.isEmergencyNumber(number)\n                        } else {\n                            number.filter { it.isDigit() }.length <= 3\n                        }\n                    } catch (_: Exception) { true }
                     val mustRemainManual = emergency || !hasContactsPermission ||
                         resolved?.displayName != null || resolved?.trusted != null
                     if (mustRemainManual) {
