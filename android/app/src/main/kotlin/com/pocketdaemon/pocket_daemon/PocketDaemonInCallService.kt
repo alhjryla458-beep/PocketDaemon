@@ -279,8 +279,11 @@ class PocketDaemonInCallService : InCallService() {
         if (app.speakerMonitorEnabled) {
             routeMonitoredCallAudio()
             Log.i(TAG, "Call monitor enabled")
-        } else {
+        } else if (app.agentConfig(AgentRoles.VOICE).apiKey.isNotBlank()) {
             muteCallVolume()
+        } else {
+            // Keep caller audio audible to the owner while fixed replies are being validated.
+            Log.i(TAG, "Offline fixed-reply mode: keeping caller audible to owner")
         }
 
         val hangUp: () -> Unit = {
