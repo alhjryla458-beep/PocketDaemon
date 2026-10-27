@@ -40,10 +40,24 @@ class FixedArabicReplyPlayer(
 
     fun start() {
         if (stopped) return
-        if (!audio.isTelephonyPlaybackReady()) {
-            fail("No TELEPHONY audio output route; fixed replies were not played")
+        waitForTelephonyRoute(0)
+    }
+
+    private fun waitForTelephonyRoute(attempt: Int) {
+        if (stopped) return
+        if (audio.isTelephonyPlaybackReady()) {
+            initializeSpeech()
             return
         }
+        if (attempt >= 12) {
+            fail("No verified TELEPHONY audio output route; fixed replies were not played")
+            return
+        }
+        mainHandler.postDelayed({ waitForTelephonyRoute(attempt + 1) }, 250L)
+    }
+
+    private fun initializeSpeech() {
+        if (stopped) return
         tts = TextToSpeech(appContext) { status ->
             mainHandler.post {
                 if (stopped) return@post
