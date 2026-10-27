@@ -57,6 +57,7 @@ class CallSession(
     private val sessionLog = SessionLogger.create(context, "call", mapOf("caller" to callerNumber))
 
     private var audioHandler: CallAudioHandler? = null
+    private var fixedReplyPlayer: FixedArabicReplyPlayer? = null
     private var gemini: VoiceSessionClient? = null
     private var recorder: AudioRecorder? = null
     private var initialInterruptIgnoreUntilMs = 0L
@@ -166,13 +167,17 @@ class CallSession(
     private fun startAudioOnly() {
         audioHandler = CallAudioHandler(context, speakerMonitor = app.speakerMonitorEnabled) { }
         audioHandler?.start()
-        Log.i(TAG, "Session active: audio only (no agent)")
+        fixedReplyPlayer = audioHandler?.let { FixedArabicReplyPlayer(context, it) }
+        fixedReplyPlayer?.start()
+        Log.i(TAG, "Session active: fixed Arabic replies (no AI/API key)")
     }
 
     override fun stop() {
         active = false
         Log.i(TAG, "Session stopping")
         gemini?.disconnect()
+        fixedReplyPlayer?.stop()
+        fixedReplyPlayer = null
         audioHandler?.stop()
         recorder?.stop()
         recorder = null
